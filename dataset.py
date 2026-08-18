@@ -1,36 +1,50 @@
 import os
-from PIL import Image
+import numpy as np
+import torch
+import torch.nn.functional as F
 from torch.utils.data import Dataset
-from torchvision import transforms
 
 
 class ImageRestorationDataset(Dataset):
-    def __init__(self, degraded_dir, clean_dir):
-        self.degraded_dir = degraded_dir
-        self.clean_dir = clean_dir
 
-        self.images = sorted([
-            f for f in os.listdir(degraded_dir)
-            if f.lower().endswith((".png", ".jpg", ".jpeg", ".tif", ".tiff"))
-        ])
+    def __init__(self, noisy_dir, gt_dir):
 
-        self.transform = transforms.Compose([
-            transforms.ToTensor()
+        self.noisy_dir = noisy_dir
+        self.gt_dir = gt_dir
+
+        self.files = sorted([
+            f for f in os.listdir(noisy_dir)
+            if f.endswith(".npy")
         ])
 
     def __len__(self):
-        return len(self.images)
+        return len(self.files)
 
     def __getitem__(self, index):
-        filename = self.images[index]
 
-        degraded_path = os.path.join(self.degraded_dir, filename)
-        clean_path = os.path.join(self.clean_dir, filename)
+        filename = self.files[index]
 
-        degraded = Image.open(degraded_path).convert("L")
-        clean = Image.open(clean_path).convert("L")
+        noisy_path = os.path.join(
+            self.noisy_dir,
+            filename
+        )
 
-        degraded = self.transform(degraded)
-        clean = self.transform(clean)
+        gt_path = os.path.join(
+            self.gt_dir,
+            filename
+        )
 
-        return degraded, clean
+        noisy = np.load(noisy_path).astype(np.float32)
+        gt = np.load(gt_path).astype(np.float32)
+
+        noisy = torch.from_numpy(noisy).unsqueeze(0)
+        gt = torch.from_numpy(gt).unsqueeze(0)
+
+        noisy = F.interpolate(
+            noisy.unsqueeze(0),
+            size=(256, 256),
+            mode="bilinear",
+            align_corners=False
+        ).squeeze(0)
+
+        return noisy, gt
