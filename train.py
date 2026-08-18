@@ -1,75 +1,75 @@
-import os
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from model import ImageRestorationCNN
 from dataset import ImageRestorationDataset
+from model import ImageRestorationCNN
 
 
-# Paths
-DEGRADED_DIR = "data/degraded"
-CLEAN_DIR = "data/clean"
+NOISY_DIR = "train/NoisyLR"
+GT_DIR = "train/GT"
 
-# Training settings
 BATCH_SIZE = 8
 EPOCHS = 20
-LEARNING_RATE = 0.001
-
-# Device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("Using device:", device)
+LEARNING_RATE = 1e-4
 
 
-# Dataset
-dataset = ImageRestorationDataset(
-    degraded_dir=DEGRADED_DIR,
-    clean_dir=CLEAN_DIR
+device = torch.device(
+    "cuda" if torch.cuda.is_available() else "cpu"
 )
 
-dataloader = DataLoader(
+
+dataset = ImageRestorationDataset(
+    NOISY_DIR,
+    GT_DIR
+)
+
+loader = DataLoader(
     dataset,
     batch_size=BATCH_SIZE,
-    shuffle=True
+    shuffle=True,
+    num_workers=0
 )
 
 
-# Model
 model = ImageRestorationCNN().to(device)
 
-# Loss function
-criterion = nn.MSELoss()
+criterion = nn.L1Loss()
 
-# Optimizer
 optimizer = torch.optim.Adam(
     model.parameters(),
     lr=LEARNING_RATE
 )
 
 
-# Training
+print("Device:", device)
+print("Training samples:", len(dataset))
+
+
 for epoch in range(EPOCHS):
 
     model.train()
+
     total_loss = 0.0
 
-    for degraded, clean in dataloader:
+    for noisy, gt in loader:
 
-        degraded = degraded.to(device)
-        clean = clean.to(device)
+        noisy = noisy.to(device)
+        gt = gt.to(device)
 
         optimizer.zero_grad()
 
-        restored = model(degraded)
+        output = model(noisy)
 
-        loss = criterion(restored, clean)
+        loss = criterion(output, gt)
 
         loss.backward()
+
         optimizer.step()
 
         total_loss += loss.item()
 
-    average_loss = total_loss / len(dataloader)
+    average_loss = total_loss / len(loader)
 
     print(
         f"Epoch [{epoch + 1}/{EPOCHS}] "
@@ -77,14 +77,10 @@ for epoch in range(EPOCHS):
     )
 
 
-# Create model directory
-os.makedirs("models", exist_ok=True)
-
-# Save trained model
 torch.save(
     model.state_dict(),
-    "models/image_restoration_cnn.pth"
+    "restoration_model.pth"
 )
 
 print("Training completed.")
-print("Model saved to models/image_restoration_cnn.pth")
+print("Model saved as restoration_model.pth")
