@@ -1,25 +1,26 @@
 import os
+import numpy as np
 import torch
-from PIL import Image
-from torchvision import transforms
 
 from model import ImageRestorationCNN
 
 
-INPUT_DIR = "data/test"
+TEST_DIR = "Test_NoisyLR/NoisyLR"
 OUTPUT_DIR = "outputs"
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device(
+    "cuda" if torch.cuda.is_available() else "cpu"
+)
+
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
-# Load model
 model = ImageRestorationCNN().to(device)
 
 model.load_state_dict(
     torch.load(
-        "models/image_restoration_cnn.pth",
+        "restoration_model.pth",
         map_location=device
     )
 )
@@ -27,37 +28,56 @@ model.load_state_dict(
 model.eval()
 
 
-transform = transforms.ToTensor()
-to_image = transforms.ToPILImage()
+files = sorted([
+    f for f in os.listdir(TEST_DIR)
+    if f.endswith(".npy")
+])
 
 
-# Process test images
-for filename in os.listdir(INPUT_DIR):
+print("Test samples:", len(files))
+print("Device:", device)
 
-    if not filename.lower().endswith(
-        (".png", ".jpg", ".jpeg", ".tif", ".tiff")
-    ):
-        continue
 
-    input_path = os.path.join(INPUT_DIR, filename)
+with torch.no_grad():
 
-    image = Image.open(input_path).convert("L")
-    image_tensor = transform(image).unsqueeze(0).to(device)
+    for filename in files:
 
-    with torch.no_grad():
-        restored = model(image_tensor)
+        path = os.path.join(
+            TEST_DIR,
+            filename
+        )
 
-    restored = torch.clamp(restored, 0, 1)
+        noisy = np.load(path).astype(
+            np.float32
+        )
 
-    output_image = to_image(restored.squeeze(0).cpu())
+        noisy = torch.from_numpy(
+            noisy
+        ).unsqueeze(0).unsqueeze(0)
 
-    output_path = os.path.join(
-        OUTPUT_DIR,
-        filename
-    )
+        noisy = torch.nn.functional.interpolate(
+            noisy,
+            size=(256, 256),
+            mode="bilinear",
+            align_corners=False
+        )
 
-    output_image.save(output_path)
+        noisy = noisy.to(device)
 
-    print("Restored:", filename)
+        output = model(noisy)
+
+        output = output.squeeze().cpu().numpy()
+
+        output_path = os.path.join(
+            OUTPUT_DIR,
+            filename
+        )
+
+        np.save(
+            output_path,
+            output
+        )
+
 
 print("Testing completed.")
+print("Outputs saved to:", OUTPUT_DIR)
